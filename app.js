@@ -1,97 +1,55 @@
-require("dotenv").config();
-// Module Imports.
-const express = require("express"),
-  app = express(),
-  mongoose = require("mongoose"),
-  expressSanitizer = require("express-sanitizer"),
-  bodyParser = require("body-parser"),
-  methodOverride = require("method-override");
-const PORT = process.env.PORT || 3000;
+const createError = require("http-errors");
+const express = require("express");
+const path = require("path");
+const cookieParser = require("cookie-parser");
+const logger = require("morgan");
+const expressLayouts = require("express-ejs-layouts");
 
-mongoose.set("useUnifiedTopology", true);
-mongoose.connect(
-  process.env.MONGODBURI,
-  { useNewUrlParser: true, useUnifiedTopology: true, useCreateIndex: true },
-  () => {
-    console.log(`Connected to the DataBase!`);
-  }
-);
-mongoose.set("useFindAndModify", false);
-app.set("view engine", "ejs");
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(expressSanitizer());
-app.use(express.static("public"));
-app.use(methodOverride("_method"));
-const Blog = require("./model/blog");
-app.get("/", function (req, res) {
-  res.redirect("/blogs");
-});
-app.get("/blogs", function (req, res) {
-  Blog.find({}, function (err, blogs) {
-    if (err) {
-      console.log(err);
-    } else {
-      res.render("index", { blogs: blogs });
-    }
-  });
-});
+const indexRouter = require("./routes/index");
+const adminRouter = require("./routes/admin");
+const connectToMongo = require("./utils/db");
 
-app.get("/blogs/new", function (req, res) {
-  res.render("new");
-});
-app.post("/blogs", function (req, res) {
-  req.body.blog.body = req.sanitize(req.body.blog.body);
-  Blog.create(req.body.blog, function (err, newBlog) {
-    if (err) {
-      res.render("new");
-    } else {
-      res.redirect("/blogs");
-      console.log("Blog created!");
-    }
-  });
-});
-app.get("/blogs/:id", function (req, res) {
-  Blog.findById(req.params.id, function (err, foundBlog) {
-    if (err) {
-      res.redirect("/blogs");
-    } else {
-      res.render("show", { blog: foundBlog });
-    }
-  });
-});
-app.get("/blogs/:id/edit", function (req, res) {
-  Blog.findById(req.params.id, function (err, foundBlog) {
-    if (err) {
-      res.redirect("/blogs");
-    } else {
-      res.render("edit", { blog: foundBlog });
-    }
-  });
-});
-app.put("/blogs/:id", function (req, res) {
-  req.body.blog.body = req.sanitize(req.body.blog.body);
-  Blog.findByIdAndUpdate(
-    req.params.id,
-    req.body.blog,
-    function (err, updatedBlog) {
-      if (err) {
-        res.redirect("/blogs");
-      } else {
-        res.redirect("/blogs/" + req.params.id);
-      }
-    }
-  );
-});
-app.delete("/blogs/:id", function (req, res) {
-  Blog.findByIdAndRemove(req.params.id, function (err) {
-    if (err) {
-      res.redirect("/blogs");
-    } else {
-      res.redirect("/blogs");
-    }
-  });
+const app = express(); //Initialize express app
+
+connectToMongo(); //Database Connection
+
+// view engine setup
+app.use(expressLayouts); //ejs layouts
+app.set("views", path.join(__dirname, "views")); //views directory
+app.set("view engine", "ejs"); //view engine
+
+app.use(logger("dev")); //logger for debuging requests
+
+// Middleware to parse incoming requests with JSON payloads
+app.use(express.json());
+// Middleware to parse incoming requests with URL-encoded payloads
+app.use(express.urlencoded({ extended: false }));
+// Middleware to parse and handle cookies in incoming requests
+app.use(cookieParser());
+
+app.use(express.static(path.join(__dirname, "public"))); //static path
+app.use(
+  "/tinymce",
+  express.static(path.join(__dirname, "node_modules", "tinymce"))
+); //static path for tinymce configuration 
+
+app.use("/", indexRouter); //index routes 
+app.use("/admin", adminRouter); //admin routes
+
+// catch 404 and forward to error handler
+app.use(function (req, res, next) {
+  next(createError(404));
 });
 
-app.listen(PORT, function () {
-  console.log(`Server for Blog App has started on ${PORT}`);
+// error handler
+app.use(function (err, req, res, next) {
+  // set locals, only providing error in development
+  res.locals.message = err.message;
+  res.locals.error = req.app.get("env") === "development" ? err : {};
+
+  // render the error page
+  res.status(err.status || 500);
+  res.render("error");
 });
+
+module.exports = app;
